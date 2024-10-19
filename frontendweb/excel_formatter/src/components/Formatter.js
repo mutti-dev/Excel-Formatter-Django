@@ -146,7 +146,7 @@ const styles = {
     borderRadius: '15px',
     boxShadow: '0 0 25px rgba(0, 0, 0, 0.1)',
     backgroundColor: '#254B97',
-    maxWidth: '600px',
+    width: '1000px',
     margin: 'auto',
     transition: 'all 0.3s ease-in-out',
   },
@@ -183,7 +183,7 @@ const styles = {
     display: 'block',
   },
   textInput: {
-    width: '100%',
+    width: '50%',
     padding: '12px',
     borderRadius: '8px',
     border: '1px solid #bdc3c7',
@@ -192,12 +192,13 @@ const styles = {
     transition: 'all 0.3s ease',
   },
   dropdown: {
-    width: '100%',
+    width: '50%',
     padding: '12px',
     borderRadius: '8px',
     border: '1px solid #bdc3c7',
     fontSize: '16px',
     backgroundColor: '#ecf0f1',
+    transition: 'all 0.3s ease',
   },
   fileInputContainer: {
     width: '100%',
