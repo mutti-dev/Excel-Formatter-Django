@@ -6,6 +6,8 @@ import pandas as pd
 from datetime import datetime
 import re
 from collections import defaultdict
+from django.http import HttpResponse
+import io
 
 class ExcelDataExtractionView(APIView):
     parser_classes = (MultiPartParser, FormParser)
@@ -29,11 +31,8 @@ class ExcelDataExtractionView(APIView):
 
             if data:
                 # Convert the extracted data to an Excel file
-                output_excel_file = self.convert_to_excel(data)
-                response = Response({"message": "Data extracted and converted to Excel successfully."}, status=status.HTTP_200_OK)
-                
-                response['Content-Disposition'] = f'attachment; filename={output_excel_file}'
-                return Response({"data": data}, status=status.HTTP_200_OK)
+                response = self.convert_to_excel(data)
+                return response
             else:
                 return Response({"error": "Unrecognized format"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -55,6 +54,75 @@ class ExcelDataExtractionView(APIView):
     """"==========================CONVERTING TO EXCEL=================================="""
 
 
+    # def convert_to_excel(self, data):
+    #     """
+    #     Converts the extracted data (JSON format) into an Excel file
+    #     where patient names are rows, dates are columns, and only CPT codes are values.
+    #     Also adds DX Codes as comma-separated values if there are multiple.
+    #     """
+    #     # Prepare DataFrame from extracted data (patients are rows, dates are columns)
+    #     formatted_data = {}
+    #     dx_codes = {}
+        
+    #     # Iterate through data to extract only CPT Codes for Excel and separate DX Codes
+    #     for patient, records in data.items():
+    #         formatted_data[patient] = {}
+    #         dx_code_list = []
+    #         print('Dx code list', dx_code_list)
+            
+    #         for date, info in records.items():
+    #             if isinstance(info, dict):  # Check if info is a dictionary
+    #                 cpt_code = info.get('CPT Code', '')
+    #                 dx_code = info.get('DX Code', '')
+    #             else:
+    #                 cpt_code = info  # If not dict, assume it's the CPT code directly
+    #                 dx_code = ''  # No DX code available
+
+    #             formatted_data[patient][date] = cpt_code  # Store only CPT code as value
+    #             dx_code_list.append(dx_code)  # Collect DX Codes for the patient
+            
+    #         dx_codes[patient] = '/ '.join(filter(None, dx_code_list))  # Join non-empty DX Codes with comma
+
+    #     # Convert formatted data to DataFrame (Transpose to make patients rows)
+    #     df = pd.DataFrame(formatted_data).T.fillna('')  # Patients as rows, dates as columns
+
+    #     # Insert the required columns
+    #     df.insert(0, 'Insurance Name', '')    # Add empty "Insurance Name" column
+    #     df.insert(1, 'Patient Names', df.index)  # Use the index for "Patient Names" column
+    #     df.insert(2, 'DX Code', df.index.map(dx_codes))  # Insert the comma-separated DX codes
+    #     df.insert(3, 'Admission Date', '')    # Add empty "Admission Date" column
+
+    #     # Create an Excel writer
+    #     output_path = 'extracted_data.xlsx'  # Specify the output file path
+    #     with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+    #         # Write the "Practice Location" text to the first row
+    #         worksheet = writer.book.add_worksheet('Sheet1')
+    #         worksheet.write(0, 0, 'Practice Location BAYLOR SCOTT & WHITE MEDICAL CENTER SUNNYVALE Nachawati, Samer')
+
+    #         # Write the DataFrame starting from the second row
+    #         df.to_excel(writer, sheet_name='Sheet1', startrow=1, header=True, index=False)
+
+    #         # Format and adjust the columns
+    #         header_format = writer.book.add_format({'bold': True, 'bg_color': '#ADD8E6'})  # Customize header format
+    #         for col_num in range(len(df.columns)):
+    #             worksheet.write(1, col_num, df.columns[col_num], header_format)  # Write header with formatting
+
+    #         # Adjust column widths
+    #         for i, col in enumerate(df.columns):
+    #             max_length = max(df[col].astype(str).map(len).max(), len(col))  # Find max length for each column
+    #             worksheet.set_column(i, i, max_length + 2)  # Adjust column width
+
+    #         # Adjust row height for the header row
+    #         worksheet.set_row(1, 20)  # Adjust the height of the header row
+
+    #         print(f"Data successfully written to {output_path}")
+
+    #     return output_path
+
+
+
+
+
     def convert_to_excel(self, data):
         """
         Converts the extracted data (JSON format) into an Excel file
@@ -64,12 +132,11 @@ class ExcelDataExtractionView(APIView):
         # Prepare DataFrame from extracted data (patients are rows, dates are columns)
         formatted_data = {}
         dx_codes = {}
-        
+
         # Iterate through data to extract only CPT Codes for Excel and separate DX Codes
         for patient, records in data.items():
             formatted_data[patient] = {}
             dx_code_list = []
-            print('Dx code list', dx_code_list)
             
             for date, info in records.items():
                 if isinstance(info, dict):  # Check if info is a dictionary
@@ -82,7 +149,7 @@ class ExcelDataExtractionView(APIView):
                 formatted_data[patient][date] = cpt_code  # Store only CPT code as value
                 dx_code_list.append(dx_code)  # Collect DX Codes for the patient
             
-            dx_codes[patient] = '/ '.join(filter(None, dx_code_list))  # Join non-empty DX Codes with comma
+            dx_codes[patient] = '/ '.join(filter(None, dx_code_list))  # Join non-empty DX Codes with '/'
 
         # Convert formatted data to DataFrame (Transpose to make patients rows)
         df = pd.DataFrame(formatted_data).T.fillna('')  # Patients as rows, dates as columns
@@ -93,9 +160,10 @@ class ExcelDataExtractionView(APIView):
         df.insert(2, 'DX Code', df.index.map(dx_codes))  # Insert the comma-separated DX codes
         df.insert(3, 'Admission Date', '')    # Add empty "Admission Date" column
 
-        # Create an Excel writer
-        output_path = 'extracted_data.xlsx'  # Specify the output file path
-        with pd.ExcelWriter(output_path, engine='xlsxwriter') as writer:
+        # Create an Excel writer with an in-memory output
+        output = io.BytesIO()  # Create an in-memory output file (so we don't need to write it to disk)
+        
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             # Write the "Practice Location" text to the first row
             worksheet = writer.book.add_worksheet('Sheet1')
             worksheet.write(0, 0, 'Practice Location BAYLOR SCOTT & WHITE MEDICAL CENTER SUNNYVALE Nachawati, Samer')
@@ -116,9 +184,12 @@ class ExcelDataExtractionView(APIView):
             # Adjust row height for the header row
             worksheet.set_row(1, 20)  # Adjust the height of the header row
 
-            print(f"Data successfully written to {output_path}")
+        # Set the response to send the file back to the user
+        output.seek(0)  # Go back to the beginning of the BytesIO file
+        response = HttpResponse(output, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename="extracted_data.xlsx"'
 
-        return output_path
+        return response
 
 
 
